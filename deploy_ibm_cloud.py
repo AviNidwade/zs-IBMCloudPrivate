@@ -84,18 +84,20 @@ except Exception as e:
     print e
     sys.exit(1)
 
-
 #Create a new BU
 domain_id = None
 print "\n\nCreating IBM Cloud Business Unit: %s"%(zsbuname)
 try:
     send_url = auth_url + '/domains'
+    print send_url
     data = '{"domain":{"name":"%s","description":"BU created on by %s.","ldapSet":false}}'%(zsbuname,auth_username)
+    print data
     r = requests.post(send_url,verify = False,data = data,headers={"content-type":"application/json","X-Auth-Token":token})
     if(r.status_code == 409):
         print "BU %s already exists."%(zsbuname)
         sys.exit(1)
     j = json.loads(r.text)
+    print j
     #get the domain id
     domain_id = j['domain']['id']
 except Exception as e:
@@ -138,17 +140,21 @@ print "Creating the IBM CLoud BU %s control project."%(zsbuname)
 project_id = None
 try:
     send_url = 'https://console.zerostack.com/v2/clusters/%s/projects'%(region_id)
+    print send_url
     data = '{"description":"IBM Cloud Project for %s BU.","domain_id":"%s","name":"IBM Cloud","finite_duration":false,\
            "metadata":{"templateId":"Large","custom_template":"true"},\
            "quota":{"compute_quota":{"cores":128,"floating_ips":64,"injected_file_content_bytes":-1,"injected_file_path_bytes":-1,"injected_files":-1,"instances":64,"key_pairs":-1,"metadata_items":-1,"ram":262144},\
            "storage_quota":{"backup_gigabytes":-1,"backups":-1,"snapshots":640,"volumes":640,"gigabytes":25600},\
            "network_quota":{"subnet":-1,"router":20,"port":-1,"network":64,"floatingip":64,"vip":-1,"pool":-1}}}'%(zsbuname,domain_id)
+    print data
     r = requests.post(send_url,verify = False,data = data,headers={"content-type":"application/json","X-Auth-Token":token})
     j = json.loads(r.text)
+    print j
     project_id = j['id']
 except Exception as e:
     print e
     sys.exit(1)
+
 print "Created IBM Cloud control project with ID: %s\n\n"%(project_id)
 
 #add the admin
@@ -176,17 +182,37 @@ except Exception as e:
 print "Created the basic security group with ID: %s.\n\n"%(j['security_group']['id'])
 
 #add the ports to the security group
-ports = [{'icmp':'null'},{'tcp':'22'},{'tcp':'80'},{'tcp':'443'},{'tcp':'8443'},{'tcp':'8080'}]
+ports = [{'type':'icmp','min':'null','max':'null'},
+         {'type':'tcp','min':'22','max':'22'},
+         {'type':'tcp','min':'80','max':'80'},
+         {'type':'tcp','min':'443','max':'443'},
+         {'type':'tcp','min':'2380','max':'2380'},
+         {'type':'tcp','min':'4001','max':'4001'},
+         {'type':'tcp','min':'8080','max':'8080'},
+         {'type':'tcp','min':'8443','max':'8443'},
+         {'type':'tcp','min':'8500','max':'8500'},
+         {'type':'tcp','min':'8888','max':'8888'},
+         {'type':'tcp','min':'8001','max':'8001'},
+         {'type':'tcp','min':'10255','max':'10255'},
+         {'type':'tcp','min':'10248','max':'10248'},
+         {'type':'tcp','min':'9200','max':'9200'},
+         {'type':'tcp','min':'9300','max':'9300'},
+         {'type':'tcp','min':'5044','max':'5044'},
+         {'type':'tcp','min':'30000','max':'32767'},
+         {'type':'tcp','min':'179','max':'179'},
+         ]
+
+print ports
 for port in ports:
     try:
         send_url = baseurl + '/neutron/v2.0/security-group-rules'
-        data = '{"security_group_rule":{"direction":"ingress","port_range_min":%s,"ethertype":"IPv4","port_range_max":%s,"protocol":"%s","security_group_id":"%s","tenant_id":"%s"}}'%(port.values()[0],port.values()[0],port.keys()[0],secgroup_id,project_id)
+        data = '{"security_group_rule":{"direction":"ingress","port_range_min":%s,"ethertype":"IPv4","port_range_max":%s,"protocol":"%s","security_group_id":"%s","tenant_id":"%s"}}'%(port['min'],port['max'],port['type'],secgroup_id,project_id)
         r = requests.post(send_url,verify = False,data = data,headers={"content-type":"application/json","X-Auth-Token":token})
         j = json.loads(r.text.encode('latin-1'))
     except Exception as e:
         print e
         sys.exit(1)
-    print "Created the basic security group rule, ID: %s.\n\n"%(j['security_group_rule']['id'])
+    print "Created the basic security group rule port %s - port %s, protocol %s, ID: %s.\n\n"%(port['min'],port['max'],port['type'],j['security_group_rule']['id'])
 
 
 print "Creating a project scoped token for %s."%(username)
@@ -227,6 +253,7 @@ try:
           "quota":{"compute_quota":{"cores":128,"floating_ips":64,"injected_file_content_bytes":-1,"injected_file_path_bytes":-1,"injected_files":-1,"instances":64,"key_pairs":-1,"metadata_items":-1,"ram":262144},\
           "storage_quota":{"backup_gigabytes":-1,"backups":-1,"snapshots":640,"volumes":640,"gigabytes":25600},\
           "network_quota":{"subnet":-1,"router":20,"port":-1,"network":64,"floatingip":64,"vip":-1,"pool":-1}}}'%(zsbuname,domain_id,auth_username,admin_user_id,keypair['fingerprint'],keypair['name'],json.dumps(keypair['private_key']),keypair['public_key'])
+
    r = requests.patch(send_url,verify = False,data = data,headers={"content-type":"application/json","X-Auth-Token":token})
    j = json.loads(r.text)
    project_id = j['id']
@@ -314,17 +341,76 @@ except Exception as e:
     sys.exit(1)
 print "Updated the IBM Cloud default network, ID: %s.\n\n"%(network_id)
 
-vms = [
-   {'vm':'cloud_bootnode','code':None},
-   {'vm':'worker','code':None},
-   {'vm':'master','code':None},
-   {'vm':'proxy','code':None},
-   {'vm':'mgmt','code':None},
-   {'vm':'va','code':None},
-   {'vm':'etcd','code':None}
-   ]
+#vms = [
+#   {'vm':'cloud_bootnode','code':None},
+#   {'vm':'worker','code':None},
+#   {'vm':'master','code':None},
+#   {'vm':'proxy','code':None},
+#   {'vm':'mgmt','code':None},
+#   {'vm':'va','code':None},
+#   {'vm':'etcd','code':None}
+#   ]
 
-print "Creating IBM Cloud control instances in IBM Cloud control project"
+vms = [{'vm':'icp-single-node','code':None}]
+
+print "Creating IBM Cloud control instances in IBM Cloud control project\n\n"
+
+print "Looking for the default image"
+image_id = None
+try:
+    send_url = baseurl + '/glance/v2/images?visibility=public'
+    r = requests.get(send_url,verify = False,headers={"content-type":"application/json","X-Auth-Token":token})
+    images = json.loads(r.text)
+    count = 0
+    im = []
+    for image in images['images']:
+        im.append({'count':count,'imagename':image['name'],'imageid':image['id']})
+        count += 1
+except Exception as e:
+    print e
+    sys.exit(1)
+
+for i in im:
+    print "ID: %s   Name: %s"%(i['count'],i['imagename'])
+
+try:
+    imid = raw_input('Enter the ID of the image to use: ')
+    for i in im:
+        if(i['count'] == int(imid)):
+            image_id = i['imageid']
+            break
+except Exception as e:
+    print e
+    sys.exit(1)
+
+print "\nLooking for the default image\n\n"
+image_id = None
+try:
+    send_url = baseurl + '/glance/v2/images?visibility=public'
+    r = requests.get(send_url,verify = False,headers={"content-type":"application/json","X-Auth-Token":token})
+    images = json.loads(r.text)
+    count = 0
+    im = []
+    for image in images['images']:
+        im.append({'count':count,'imagename':image['name'],'imageid':image['id']})
+        count += 1
+except Exception as e:
+    print e
+    sys.exit(1)
+
+for i in im:
+    print "ID: %s   Name: %s"%(i['count'],i['imagename'])
+
+try:
+    imid = raw_input('Enter the ID of the image to use: ')
+    for i in im:
+        if(i['count'] == int(imid)):
+            image_id = i['imageid']
+            break
+except Exception as e:
+    print e
+    sys.exit(1)
+
 
 for vm in vms:
    print "Building %s instance."%(vm['vm'])
