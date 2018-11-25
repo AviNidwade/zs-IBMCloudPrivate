@@ -1,0 +1,485 @@
+heat_template_version: 2015-04-30
+# This key with value "2015-04-30" indicates that the YAML document is
+# a HOT template of the specified version.
+# This version has no relation with the application version that this template installs.
+
+description: IBM ICP 3.0.1
+
+parameter_groups:
+- label: VM HA
+  description: Option To Enable VM-HA
+  parameters:
+  - zs_internal_vm_ha
+- label: Instance Parameters
+  description: Instace Specific Parameters
+  parameters:
+  - image
+  - flavor
+  - key
+  - private_network
+  - public_network
+  - boot_volume_type
+  - boot_volume_size
+  - data_volume_type
+  - data_volume_size
+- label: Proxy Parameters
+  description: Proxy environment parameters
+  parameters:
+  - proxy_type
+  - proxy_ip_port
+
+parameters:
+  image:
+    type: string
+    label: Image Name or ID
+    description: Image to be used for compute instance
+    constraints:
+      - custom_constraint: glance.image
+
+  flavor:
+    type: string
+    label: Flavor
+    description: Type of Instance (flavor) to be used
+    default: m1.large
+    constraints:
+      - custom_constraint: nova.flavor
+
+  key:
+    type: string
+    label: Key Name
+    description: Name of key-pair to be used for compute instance
+    constraints:
+      - custom_constraint: nova.keypair
+
+  private_network:
+    type: string
+    label: Private Network Name or ID
+    description: Private network to attach instance to.
+    constraints:
+      - custom_constraint: neutron.network
+
+  public_network:
+    type: string
+    label: Public Network Name or ID
+    description: Select the network which has connectivity to the selected private network.
+    constraints:
+      - custom_constraint: neutron.network
+
+  boot_volume_type:
+    type: string
+    default: relhighcap_type
+    label: Boot Volume Type
+    description: Boot volume type
+    constraints:
+      - custom_constraint: cinder.vtype
+        description: Volume type must be relhighcap_type or highiops_type or relhighiops_type or highcap_type
+
+  boot_volume_size:
+    type: number
+    label: Bootable Volume Size (GB)
+    description: In GB
+    default: 30
+    constraints:
+      - range: { min: 15 }
+
+  data_volume_type:
+    type: string
+    default: relhighcap_type
+    label: Data Volume Type
+    description: Data volume type
+    constraints:
+      - custom_constraint: cinder.vtype
+        description: Volume type must be relhighcap_type or highiops_type or relhighiops_type or highcap_type
+
+  data_volume_size:
+    type: number
+    label: Data Volume Size (GB)
+    description: In GB
+    default: 350
+
+  zs_internal_vm_ha:
+    type: boolean
+    label: Enable High-Availability
+    description: VM HA enable flag
+
+  proxy_type:
+    type: string
+    label: Proxy Type
+    default: No Proxy
+    constraints:
+      - allowed_values:
+        - No Proxy
+        - HTTP Proxy
+        - HTTPS Proxy
+        - FTP Proxy
+
+  proxy_ip_port:
+    type: string
+    default: ""
+    label: Proxy Details
+    description: USERNAME:PASSWORD@IP_ADDRESS:PORT
+
+resources:
+  stack-string:
+    type: OS::Heat::RandomString
+    properties:
+      length: 4
+      character_classes:
+        - class: lowercase
+
+  secgroup:
+    type: OS::Neutron::SecurityGroup
+    properties:
+      rules:
+        [{"direction": "ingress", "ethertype": "IPv4", "port_range_min": 22, "port_range_max": 22, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 80, "port_range_max": 80, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 443, "port_range_max": 443, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 2380, "port_range_max": 2380, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 4001, "port_range_max": 4001, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 8080, "port_range_max": 8080, "remote_ip_prefix": 0.0.0.0/0,"protocol": tcp },
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 8443, "port_range_max": 8443, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 8500, "port_range_max": 8500, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 8888, "port_range_max": 8888, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 8001, "port_range_max": 8001, "remote_ip_prefix": 0.0.0.0/0,"protocol": tcp },
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 10255, "port_range_max": 10255, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 10248, "port_range_max": 10248, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 9200, "port_range_max": 9200, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 9300, "port_range_max": 9300, "remote_ip_prefix": 0.0.0.0/0, "protocol": tcp},
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 5044, "port_range_max": 5044, "remote_ip_prefix": 0.0.0.0/0,"protocol": tcp },
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 30000, "port_range_max": 32767, "remote_ip_prefix": 0.0.0.0/0,"protocol": tcp },
+        {"direction": "ingress", "ethertype": "IPv4", "port_range_min": 179, "port_range_max": 179, "remote_ip_prefix": 0.0.0.0/0,"protocol": tcp },
+        {"direction": "ingress", "ethertype": "IPv4","remote_ip_prefix": 0.0.0.0/0, "protocol": 4},
+        {"direction": "egress", "ethertype": "IPv6", "protocol": tcp},
+        {"direction": "egress", "ethertype": "IPv4","remote_ip_prefix": 0.0.0.0/0},
+        {"direction": "egress", "ethertype": "IPv6"},
+        {"direction": "ingress", "ethertype": "IPv4","remote_ip_prefix": 0.0.0.0/0, "protocol": icmp}]
+
+  boot_volume:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: boot_volume_size }
+      volume_type: { get_param: boot_volume_type }
+      image: {get_param: image }
+      name: { list_join: [-, [{get_param: "OS::stack_name"}, {get_resource: stack-string}, bootvolume]] }
+
+  data_volume:
+    type: OS::Cinder::Volume
+    properties:
+      size: { get_param: data_volume_size }
+      volume_type: { get_param: data_volume_type }
+      name: { list_join: [-, [{get_param: "OS::stack_name"}, {get_resource: stack-string}, datavolume]] }
+
+  private_port:
+    type: OS::Neutron::Port
+    properties:
+      network: { get_param: private_network }
+      name: { list_join: [-, [{get_param: "OS::stack_name"}, {get_resource: stack-string}, port]] }
+      security_groups:
+        - { get_resource: secgroup }
+
+  icp_instance:
+    type: OS::Nova::Server
+    depends_on: boot_volume
+    properties:
+      block_device_mapping: [{ device_name: "vda", volume_id : { get_resource : boot_volume }, delete_on_termination : "true" },{ device_name: "vdb", volume_id : { get_resource : data_volume }, delete_on_termination : "false" }]
+      flavor: { get_param: flavor }
+      name: { list_join: [-, [{get_param: "OS::stack_name"}, {get_resource: stack-string} ]] }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: private_port }
+      metadata:
+        zs_internal_vm_ha:
+          "Fn::Select":
+          - str_replace:
+              template: "is_ha_enabled"
+              params:
+                is_ha_enabled: {get_param: zs_internal_vm_ha}
+          - { "True": "true", "False": "false"}
+        zs_internal_desired_state: "ACTIVE"
+        zs_internal_app_id: { get_param: "OS::stack_id" }
+        zs_internal_app_name: {get_param: "OS::stack_name"}
+        zs_internal_project_id: { get_param: "OS::project_id" }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: |
+            #!/bin/bash -x
+            set -e
+            set -o errexit
+
+            exec &> >(gawk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0 }' | tee -a /var/tmp/install.log)
+            err_report() {
+            	trap - ERR
+
+            	local err=$1 # error status
+            	local line=$2 # LINENO
+            	local command="$3"
+            	echo "$0: ERROR '$command' failed at line $line - exited with status: $err"
+            }
+            trap 'err_report $? $LINENO $BASH_LINENO "$BASH_COMMAND"' ERR
+
+            # params used in user data script
+            MY_OS=`awk 'NR==1{print $1}' /etc/os-release | cut -b 7-12`
+
+            if [ $MY_OS = "Ubuntu" ]; then
+              # Get the main IP of the host
+              HOSTNAME_IP=$(ip route get 1 | awk '{print $NF;exit}')
+              EXTERNAL_IP=__public_ip__
+              HOST_NAME=$(hostname)
+              
+              mkdir -p /opt/icp
+              echo 'type=83' | sudo sfdisk /dev/vdb
+              echo y | sudo mkfs -t ext4 /dev/vdb1
+              sh -c "echo /dev/vdb1 /opt/icp ext4 defaults,noatime,nofail 0 0 >> /etc/fstab"
+              mount -a
+
+              # Move to the root directory
+              cd /root || exit
+
+              # ICP Installation directory
+              ICP_LOCATION=/opt/icp
+
+              # Create SSH Key for the cluster and overwrite any already created
+              yes y | ssh-keygen -t rsa -f /root/.ssh/id_rsa -q -P ""
+
+              # Add this ssh-key in the authorized_keys
+              cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+
+              # Updating, upgrading and installing some packages
+              apt-get install apt-transport-https ca-certificates curl software-properties-common -y
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -yq
+              apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade -yq
+              apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install -yq vim python git socat
+      
+              # Remove any old Docker setup
+              apt-get remove docker docker-engine docker.io -y
+
+              #install docker
+              sudo apt-get install apt-transport-https ca-certificates curl software-properties-common -y
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+              sudo apt-key fingerprint 0EBFCD88
+              sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+              sudo apt-get update -y
+              sudo apt-get install docker-ce=18.03.0~ce-0~ubuntu -y
+              sudo service docker start
+              systemctl enable docker
+
+              # Enabling Docker Remote API on Ubuntu 16.04
+              sed -i -- 's/ExecStart=\/usr\/bin\/dockerd -H fd:\/\//ExecStart=\/usr\/bin\/dockerd -H fd:\/\/ -H tcp:\/\/0.0.0.0:4243/g' /lib/systemd/system/docker.service
+              systemctl daemon-reload
+              service docker restart
+
+              # Configuring ICP details (as described in the documentation)
+              sysctl -w vm.max_map_count=262144
+              echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+              sysctl -w net.ipv4.ip_local_port_range="10240  60999"
+              echo 'net.ipv4.ip_local_port_range="10240 60999"' | sudo tee -a /etc/sysctl.conf
+
+              sed -i -- 's/manage_etc_hosts: true/manage_etc_hosts: false/g' /etc/cloud/cloud.cfg
+
+              sed -i '/127.0.1.1/s/^/#/g' /etc/hosts
+              sed -i '/ip6-localhost/s/^/#/g' /etc/hosts
+              echo -e "$HOSTNAME_IP $HOST_NAME" | tee -a /etc/hosts
+
+              # Disable StrictHostKeyChecking ask
+              sed -i -- 's/#   StrictHostKeyChecking ask/StrictHostKeyChecking no/g' /etc/ssh/ssh_config
+
+              #pull icp 3.1.0
+              INCEPTION=ibmcom/icp-inception:3.1.0
+              docker pull $INCEPTION
+
+              #run icp
+              cd /opt/icp
+              docker run -v "$(pwd)":/data -e LICENSE=accept $INCEPTION cp -r cluster /data
+              cp /root/.ssh/id_rsa ./cluster/ssh_key
+              cd ./cluster || exit
+              
+              # Remove the content of the hosts file
+              > ./hosts
+              
+              # Add the IP of the single node in the hosts file
+              echo "
+              [master]
+              $EXTERNAL_IP
+
+              [worker]
+              $EXTERNAL_IP
+
+              [proxy]
+              $EXTERNAL_IP
+
+              #[management]
+              #4.4.4.4
+              #[va]
+              #5.5.5.5
+              " >> ./hosts
+
+              #set the policy
+              echo "
+              image-security-enforcement:
+                 clusterImagePolicy:
+                   - name: "docker.io/ibmcom/*"
+                     policy:
+              " >> ./config.yaml
+
+              #set the mtu to 1350
+              sed -i -- "s/# calico_tunnel_mtu: 1430/calico_tunnel_mtu: 1350/g" ./config.yaml
+              
+              # Replace the entries in the config file to remove the comments of the external IPs
+              sed -i -- "s/# cluster_lb_address: none/cluster_lb_address: $EXTERNAL_IP/g" ./config.yaml
+              sed -i -- "s/# proxy_lb_address: none/proxy_lb_address: $EXTERNAL_IP/g" ./config.yaml
+
+              # Install ICP
+              docker run --net=host -t -e LICENSE=accept -v "$(pwd)":/installer/cluster $INCEPTION install
+
+              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Setting up IBM Cloud Private CE"}'
+
+            else
+              # Adding failure message
+              wc_notify --data-binary '{"status": "FAILURE", "reason": "Operating System not supported"}'
+            fi
+
+            if [ $MY_OS = "CentOS" ]; then
+              # Get the main IP of the host
+              HOSTNAME_IP=$(ip route get 1 | awk '{print $NF;exit}')
+              EXTERNAL_IP=__public_ip__
+              HOST_NAME=$(hostname)
+
+              #set up the filesystem
+              mkdir -p /opt/icp
+              echo 'type=83' | sudo sfdisk /dev/vdb
+              echo y | sudo mkfs -t ext4 /dev/vdb1
+              sh -c "echo /dev/vdb1 /opt/icp ext4 defaults,noatime,nofail 0 0 >> /etc/fstab"
+              mount -a
+
+              # Move to the root directory
+              cd /root || exit
+
+              # ICP Installation directory
+              ICP_LOCATION=/opt/icp
+
+              #Add needed libraries
+              sudo yum install -y epel-release
+              sudo yum install -y python-pip
+              sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+              sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+              #install 
+              sudo yum install -y docker-ce-18.03.0.ce
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo docker pull ibmcom/icp-inception:3.1.0
+              sudo mkdir /opt/ibm-cloud-private-ce-3.1.0
+              cd /opt/ibm-cloud-private-ce-3.1.0
+              sudo docker run -e LICENSE=accept -v "$(pwd)":/data ibmcom/icp-inception:3.1.0 cp -r cluster /data
+              sudo pip install docker-compose
+
+              # Notifying icp installation
+              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Setting up IBM Cloud Private CE"}'
+
+              # Configuring ICP details (as described in the documentation)
+              sysctl -w vm.max_map_count=262144
+              echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+              sysctl -w net.ipv4.ip_local_port_range="10240  60999"
+              echo 'net.ipv4.ip_local_port_range="10240 60999"' | sudo tee -a /etc/sysctl.conf
+
+              sed -i -- 's/manage_etc_hosts: true/manage_etc_hosts: false/g' /etc/cloud/cloud.cfg
+
+              sed -i '/127.0.1.1/s/^/#/g' /etc/hosts
+              sed -i '/ip6-localhost/s/^/#/g' /etc/hosts
+              echo -e "$HOSTNAME_IP $HOST_NAME" | tee -a /etc/hosts
+
+              # Disable StrictHostKeyChecking ask
+              sed -i -- 's/#   StrictHostKeyChecking ask/StrictHostKeyChecking no/g' /etc/ssh/ssh_config
+
+              #pull icp 3.1.0
+              INCEPTION=ibmcom/icp-inception:3.1.0
+              docker pull $INCEPTION
+
+              #run icp
+              cd /opt/icp
+              docker run -v "$(pwd)":/data -e LICENSE=accept $INCEPTION cp -r cluster /data
+              cp /root/.ssh/id_rsa ./cluster/ssh_key
+              cd ./cluster || exit
+              
+              # Remove the content of the hosts file
+              > ./hosts
+              
+              # Add the IP of the single node in the hosts file
+              echo "
+              [master]
+              $EXTERNAL_IP
+
+              [worker]
+              $EXTERNAL_IP
+
+              [proxy]
+              $EXTERNAL_IP
+
+              #[management]
+              #4.4.4.4
+              #[va]
+              #5.5.5.5
+              " >> ./hosts
+
+              #set the policy
+              echo "
+              image-security-enforcement:
+                 clusterImagePolicy:
+                   - name: "docker.io/ibmcom/*"
+                     policy:
+              " >> ./config.yaml
+
+              #set the mtu to 1350
+              sed -i -- "s/# calico_tunnel_mtu: 1430/calico_tunnel_mtu: 1350/g" ./config.yaml
+              
+              # Replace the entries in the config file to remove the comments of the external IPs
+              sed -i -- "s/# cluster_lb_address: none/cluster_lb_address: $EXTERNAL_IP/g" ./config.yaml
+              sed -i -- "s/# proxy_lb_address: none/proxy_lb_address: $EXTERNAL_IP/g" ./config.yaml
+
+              # Install ICP
+              docker run --net=host -t -e LICENSE=accept -v "$(pwd)":/installer/cluster $INCEPTION install
+
+              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Setting up IBM Cloud Private CE"}'
+            
+            else
+              # Adding failure message
+              wc_notify --data-binary '{"status": "FAILURE", "reason": "Operating System not supported"}'
+            fi
+
+          params:
+            wc_notify: { get_attr: [icp_wait_handle, curl_cli] }
+            __public_ip__: { get_attr: [ floating_ip, floating_ip_address ] }
+            __proxy_ip_port__: { get_param: proxy_ip_port }
+            __proxy_type__: { get_param: proxy_type }
+
+  floating_ip:
+    type: OS::Neutron::FloatingIP
+    properties:
+      floating_network: { get_param: public_network }
+
+  floating_ip_assoc:
+    type: OS::Neutron::FloatingIPAssociation
+    properties:
+      floatingip_id: { get_resource: floating_ip }
+      port_id: { get_resource: private_port }
+
+  icp_wait:
+    type: "OS::Heat::WaitCondition"
+    depends_on: icp_instance
+    properties:
+      handle:
+        get_resource: icp_wait_handle
+      timeout: 1800
+      count: 2
+
+  icp_wait_handle:
+    type: "OS::Heat::WaitConditionHandle"
+
+
+outputs:
+
+  instance_ip:
+    description: IP address of the ICP Single Node instance
+    value: { get_attr: [floating_ip, floating_ip_address] }
