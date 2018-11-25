@@ -301,13 +301,13 @@ resources:
               # Add the IP of the single node in the hosts file
               echo "
               [master]
-              $EXTERNAL_IP
+              $HOSTNAME_IP
 
               [worker]
-              $EXTERNAL_IP
+              $HOSTNAME_IP
 
               [proxy]
-              $EXTERNAL_IP
+              $HOSTNAME_IP
 
               #[management]
               #4.4.4.4
@@ -409,13 +409,13 @@ resources:
               # Add the IP of the single node in the hosts file
               echo "
               [master]
-              $EXTERNAL_IP
+              $HOSTNAME_IP
 
               [worker]
-              $EXTERNAL_IP
+              $HOSTNAME_IP
 
               [proxy]
-              $EXTERNAL_IP
+              $HOSTNAME_IP
 
               #[management]
               #4.4.4.4
