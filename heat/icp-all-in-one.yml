@@ -3,7 +3,7 @@ heat_template_version: 2015-04-30
 # a HOT template of the specified version.
 # This version has no relation with the application version that this template installs.
 
-description: IBM ICP 3.0.1
+description: IBM ICP 3.1.0
 
 parameter_groups:
 - label: VM HA
@@ -78,7 +78,7 @@ parameters:
     type: number
     label: Bootable Volume Size (GB)
     description: In GB
-    default: 30
+    default: 100
     constraints:
       - range: { min: 15 }
 
@@ -221,6 +221,8 @@ resources:
             # params used in user data script
             MY_OS=`awk 'NR==1{print $1}' /etc/os-release | cut -b 7-12`
 
+            wc_notify --data-binary '{"status": "SUCCESS", "reason": "Setting up ICP on $MY_OS."}'
+
             if [ $MY_OS = "Ubuntu" ]; then
               # Get the main IP of the host
               HOSTNAME_IP=$(ip route get 1 | awk '{print $NF;exit}')
@@ -333,7 +335,7 @@ resources:
               # Install ICP
               docker run --net=host -t -e LICENSE=accept -v "$(pwd)":/installer/cluster $INCEPTION install
 
-              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Setting up IBM Cloud Private CE"}'
+              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Finished setting up ICP."}'
 
             else
               # Adding failure message
@@ -441,7 +443,7 @@ resources:
               # Install ICP
               docker run --net=host -t -e LICENSE=accept -v "$(pwd)":/installer/cluster $INCEPTION install
 
-              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Setting up IBM Cloud Private CE"}'
+              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Finished setting up ICP."}'
             
             else
               # Adding failure message
@@ -479,6 +481,16 @@ resources:
 
 
 outputs:
+
+  SSHlogIn_Info:
+    value: ssh -i __key__ user@__public_ip__
+    description: >
+      Use username "ubuntu" used for Ubuntu based single node. Use username "centos" used for Centos based single node.
+
+  logIn_Info:
+    value: https://__public_ip__:8443
+    description: >
+      Use Username "admin" and password 'admin" for logging in to the ICP single node.
 
   instance_ip:
     description: IP address of the ICP Single Node instance
