@@ -3,25 +3,40 @@ heat_template_version: 2015-04-30
 # a HOT template of the specified version.
 # This version has no relation with the application version that this template installs.
 
-description: IBM ICP 3.1.0
+description: IBM ICP 3.1.0 Multi Node
 
 parameter_groups:
 - label: VM HA
   description: Option To Enable VM-HA
   parameters:
   - zs_internal_vm_ha
-- label: Instance Parameters
-  description: Instace Specific Parameters
+- label: ICP Base image
+  description: Base image for ICP nodes
   parameters:
   - image
-  - flavor
   - key
+- label: ICP Networking
+  description: Private and public networks. 
+  parameters:
   - private_network
   - public_network
+- label: Master Instance Parameters
+  description: Master Instace Specific Parameters
+  parameters:
+  - flavor
   - boot_volume_type
   - boot_volume_size
   - data_volume_type
   - data_volume_size
+- label: Worker Instance Parameters
+  description: Worker Instace Specific Parameters
+  parameters:
+  - worker_count
+  - worker_flavor
+  - worker_boot_volume_type
+  - worker_boot_volume_size
+  - worker_data_volume_type
+  - worker_data_volume_size
 - label: Proxy Parameters
   description: Proxy environment parameters
   parameters:
@@ -44,6 +59,14 @@ parameters:
     constraints:
       - custom_constraint: nova.flavor
 
+  worker_flavor:
+    type: string
+    label: Flavor
+    description: Type of Instance (flavor) to be used
+    default: m1.large
+    constraints:
+      - custom_constraint: nova.flavor
+
   key:
     type: string
     label: Key Name
@@ -54,21 +77,21 @@ parameters:
   private_network:
     type: string
     label: Private Network Name or ID
-    description: Private network to attach instance to
+    description: Private network to attach instance to.
     constraints:
       - custom_constraint: neutron.network
 
   public_network:
     type: string
     label: Public Network Name or ID
-    description: Select a network that can connect to a outward faceing network
+    description: Select a network that can connect to a outward faceing network.
     constraints:
       - custom_constraint: neutron.network
 
   boot_volume_type:
     type: string
     default: relhighcap_type
-    label: Boot Volume storage pool
+    label: Boot Volume Type
     description: Boot volume type
     constraints:
       - custom_constraint: cinder.vtype
@@ -85,8 +108,8 @@ parameters:
   data_volume_type:
     type: string
     default: relhighcap_type
-    label: Data Volume storage pool
-    description: Data volume backing
+    label: Data Volume Type
+    description: Data volume type
     constraints:
       - custom_constraint: cinder.vtype
         description: Volume type must be relhighcap_type or highiops_type or relhighiops_type or highcap_type
@@ -97,10 +120,50 @@ parameters:
     description: In GB
     default: 350
 
+  worker_boot_volume_type:
+    type: string
+    default: relhighcap_type
+    label: Boot Volume Type
+    description: Boot volume type
+    constraints:
+      - custom_constraint: cinder.vtype
+        description: Volume type must be relhighcap_type or highiops_type or relhighiops_type or highcap_type
+
+  worker_boot_volume_size:
+    type: number
+    label: Bootable Volume Size (GB)
+    description: In GB
+    default: 100
+    constraints:
+      - range: { min: 15 }
+
+  worker_data_volume_type:
+    type: string
+    default: relhighcap_type
+    label: Data Volume Type
+    description: Data volume type
+    constraints:
+      - custom_constraint: cinder.vtype
+        description: Volume type must be relhighcap_type or highiops_type or relhighiops_type or highcap_type
+
+  worker_data_volume_size:
+    type: number
+    label: Data Volume Size (GB)
+    description: In GB
+    default: 350
+
   zs_internal_vm_ha:
     type: boolean
-    label: Enable High-Availability
+    label: Enable High-Availability on ALL nodes
     description: VM HA enable flag
+
+  worker_count:
+    type: number
+    label: Worker Nodes
+    description: Number of worker nodes to spin up
+    default: 1
+    constraints:
+      - range: { min: 1 }
 
   proxy_type:
     type: string
@@ -176,6 +239,187 @@ resources:
       name: { list_join: [-, [{get_param: "OS::stack_name"}, {get_resource: stack-string}, port]] }
       security_groups:
         - { get_resource: secgroup }
+
+  worker_instance:
+    type: OS::Nova::Server
+    depends_on: boot_volume
+    properties:
+      count: { get_param: worker_count }
+      block_device_mapping: [{ device_name: "vda", volume_id : { get_resource : boot_volume }, delete_on_termination : "true" },{ device_name: "vdb", volume_id : { get_resource : data_volume }, delete_on_termination : "false" }]
+      flavor: { get_param: flavor }
+      name: { list_join: [-, [{get_param: "OS::stack_name"}, {get_resource: stack-string} ]] }
+      key_name: { get_param: key }
+      networks:
+        - port: { get_resource: private_port }
+      metadata:
+        zs_internal_vm_ha:
+          "Fn::Select":
+          - str_replace:
+              template: "is_ha_enabled"
+              params:
+                is_ha_enabled: {get_param: zs_internal_vm_ha}
+          - { "True": "true", "False": "false"}
+        zs_internal_desired_state: "ACTIVE"
+        zs_internal_app_id: { get_param: "OS::stack_id" }
+        zs_internal_app_name: {get_param: "OS::stack_name"}
+        zs_internal_project_id: { get_param: "OS::project_id" }
+      user_data_format: RAW
+      user_data:
+        str_replace:
+          template: |
+            #!/bin/bash -x
+            set -e
+            set -o errexit
+            
+            exec &> >(gawk '{ print strftime("[%Y-%m-%d %H:%M:%S]"), $0 }' | tee -a /var/tmp/install.log)
+            err_report() {
+              trap - ERR
+              local err=$1 # error status
+              local line=$2 # LINENO
+              local command="$3"
+              echo "$0: ERROR '$command' failed at line $line - exited with status: $err"
+            }
+            
+            trap 'err_report $? $LINENO $BASH_LINENO "$BASH_COMMAND"' ERR
+
+            # params used in user data script
+            MY_OS=`awk 'NR==1{print $1}' /etc/os-release | cut -b 7-12`
+
+            wc_notify --data-binary '{"status": "SUCCESS", "reason": "Setting up ICP on $MY_OS."}'
+
+            if [ $MY_OS = "Ubuntu" ]; then
+              # Get the main IP of the host
+              HOSTNAME_IP=$(ip route get 1 | awk '{print $NF;exit}')
+              EXTERNAL_IP=__public_ip__
+              HOST_NAME=$(hostname)
+              
+              mkdir -p /opt/icp
+              echo 'type=83' | sudo sfdisk /dev/vdb
+              echo y | sudo mkfs -t ext4 /dev/vdb1
+              sh -c "echo /dev/vdb1 /opt/icp ext4 defaults,noatime,nofail 0 0 >> /etc/fstab"
+              mount -a
+
+              # Move to the root directory
+              cd /root || exit
+
+              # ICP Installation directory
+              ICP_LOCATION=/opt/icp
+
+              # Create SSH Key for the cluster and overwrite any already created
+              yes y | ssh-keygen -t rsa -f /root/.ssh/id_rsa -q -P ""
+
+              # Add this ssh-key in the authorized_keys
+              cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+
+              # Updating, upgrading and installing some packages
+              apt-get install apt-transport-https ca-certificates curl software-properties-common -y
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -yq
+              apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" upgrade -yq
+              apt-get -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install -yq vim python git socat
+      
+              # Remove any old Docker setup
+              apt-get remove docker docker-engine docker.io -y
+
+              #install docker
+              sudo apt-get install apt-transport-https ca-certificates curl software-properties-common -y
+              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+              sudo apt-key fingerprint 0EBFCD88
+              sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+              sudo apt-get update -y
+              sudo apt-get install docker-ce=18.03.0~ce-0~ubuntu -y
+              sudo service docker start
+              systemctl enable docker
+
+              # Enabling Docker Remote API on Ubuntu 16.04
+              sed -i -- 's/ExecStart=\/usr\/bin\/dockerd -H fd:\/\//ExecStart=\/usr\/bin\/dockerd -H fd:\/\/ -H tcp:\/\/0.0.0.0:4243/g' /lib/systemd/system/docker.service
+              systemctl daemon-reload
+              service docker restart
+
+              # Configuring ICP details (as described in the documentation)
+              sysctl -w vm.max_map_count=262144
+              echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+              sysctl -w net.ipv4.ip_local_port_range="10240  60999"
+              echo 'net.ipv4.ip_local_port_range="10240 60999"' | sudo tee -a /etc/sysctl.conf
+
+              sed -i -- 's/manage_etc_hosts: true/manage_etc_hosts: false/g' /etc/cloud/cloud.cfg
+
+              sed -i '/127.0.1.1/s/^/#/g' /etc/hosts
+              sed -i '/ip6-localhost/s/^/#/g' /etc/hosts
+              echo -e "$HOSTNAME_IP $HOST_NAME" | tee -a /etc/hosts
+
+              # Disable StrictHostKeyChecking ask
+              sed -i -- 's/#   StrictHostKeyChecking ask/StrictHostKeyChecking no/g' /etc/ssh/ssh_config
+            
+              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Finished setting up ICP."}'
+
+            else
+              # Adding failure message
+              wc_notify --data-binary '{"status": "FAILURE", "reason": "Operating System not supported"}'
+            fi
+
+            if [ $MY_OS = "CentOS" ]; then
+              # Get the main IP of the host
+              HOSTNAME_IP=$(ip route get 1 | awk '{print $NF;exit}')
+              EXTERNAL_IP=__public_ip__
+              HOST_NAME=$(hostname)
+
+              #set up the filesystem
+              mkdir -p /opt/icp
+              echo 'type=83' | sudo sfdisk /dev/vdb
+              echo y | sudo mkfs -t ext4 /dev/vdb1
+              sh -c "echo /dev/vdb1 /opt/icp ext4 defaults,noatime,nofail 0 0 >> /etc/fstab"
+              mount -a
+
+              # Move to the root directory
+              cd /root || exit
+
+              # ICP Installation directory
+              ICP_LOCATION=/opt/icp
+              sudo setenforce 0
+              sudo sed -i 's/=enforcing/=disabled/;s/=permissive/=disabled/' /etc/selinux/config
+
+              #Add needed libraries
+              sudo yum install -y epel-release
+              sudo yum install -y python-pip
+              sudo yum install -y yum-utils device-mapper-persistent-data lvm2
+              sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+              #install 
+              sudo yum install -y docker-ce-18.03.0.ce
+              sudo systemctl start docker
+              sudo systemctl enable docker
+              sudo pip install docker-compose
+
+              # Notifying icp installation
+              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Setting up IBM Cloud Private CE"}'
+
+              # Configuring ICP details (as described in the documentation)
+              sysctl -w vm.max_map_count=262144
+              echo "vm.max_map_count=262144" | sudo tee -a /etc/sysctl.conf
+              sysctl -w net.ipv4.ip_local_port_range="10240  60999"
+              echo 'net.ipv4.ip_local_port_range="10240 60999"' | sudo tee -a /etc/sysctl.conf
+
+              sed -i -- 's/manage_etc_hosts: true/manage_etc_hosts: false/g' /etc/cloud/cloud.cfg
+
+              sed -i '/127.0.1.1/s/^/#/g' /etc/hosts
+              sed -i '/ip6-localhost/s/^/#/g' /etc/hosts
+              echo -e "$HOSTNAME_IP $HOST_NAME" | tee -a /etc/hosts
+
+              # Disable StrictHostKeyChecking ask
+              sed -i -- 's/#   StrictHostKeyChecking ask/StrictHostKeyChecking no/g' /etc/ssh/ssh_config
+              wc_notify --data-binary '{"status": "SUCCESS", "reason": "Finished setting up ICP."}'
+            
+            else
+              # Adding failure message
+              wc_notify --data-binary '{"status": "FAILURE", "reason": "Operating System not supported"}'
+            fi
+
+          params:
+            wc_notify: { get_attr: [icp_wait_handle, curl_cli] }
+            __public_ip__: { get_attr: [ floating_ip, floating_ip_address ] }
+            __proxy_ip_port__: { get_param: proxy_ip_port }
+            __proxy_type__: { get_param: proxy_type }
 
   icp_instance:
     type: OS::Nova::Server
